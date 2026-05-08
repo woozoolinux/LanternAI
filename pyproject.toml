@@ -1,0 +1,25 @@
+[project]
+name = "lanternai"
+version = "0.1.0"
+description = "Lightweight AI Agent Tracer - 토큰, 실행시간, 로그 모니터링"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+keywords = ["ai", "agent", "tracing", "monitoring", "llm"]
+dependencies = []
+
+[project.optional-dependencies]
+server = ["fastapi>=0.100", "uvicorn", "httpx"]
+tokens = ["tiktoken"]
+all = ["fastapi>=0.100", "uvicorn", "httpx", "tiktoken"]
+
+[project.urls]
+Homepage = "https://github.com/woozoolinux/LanternAI"
+Repository = "https://github.com/woozoolinux/LanternAI"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lanternai"]

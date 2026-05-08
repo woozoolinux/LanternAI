@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mytracer — AI Agent Monitor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d0f12;
+    --bg2: #13161b;
+    --bg3: #1a1e26;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.12);
+    --text: #e8eaf0;
+    --muted: #7a8090;
+    --accent: #4f8ef7;
+    --accent2: #6ee7b7;
+    --warn: #fbbf24;
+    --danger: #f87171;
+    --success: #34d399;
+    --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; font-size: 14px; line-height: 1.6; min-height: 100vh; }
+
+  header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+  .logo { font-size: 16px; font-weight: 600; letter-spacing: -0.5px; display: flex; align-items: center; gap: 8px; }
+  .logo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent2); box-shadow: 0 0 8px var(--accent2); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .endpoint-input { background: var(--bg3); border: 1px solid var(--border2); color: var(--text); padding: 6px 12px; border-radius: 6px; font-size: 13px; width: 220px; font-family: var(--mono); }
+  .endpoint-input:focus { outline: none; border-color: var(--accent); }
+  .btn { padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border2); background: var(--bg3); color: var(--text); font-size: 13px; cursor: pointer; transition: all .15s; }
+  .btn:hover { background: var(--bg3); border-color: var(--accent); color: var(--accent); }
+  .btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+  .status-badge { font-size: 12px; padding: 3px 8px; border-radius: 4px; font-family: var(--mono); }
+  .connected { background: rgba(52,211,153,0.1); color: var(--success); border: 1px solid rgba(52,211,153,0.2); }
+  .disconnected { background: rgba(248,113,113,0.1); color: var(--danger); border: 1px solid rgba(248,113,113,0.2); }
+
+  main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  .stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  .stat-value { font-size: 28px; font-weight: 600; letter-spacing: -1px; font-family: var(--mono); }
+  .stat-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .c-blue { color: var(--accent); }
+  .c-green { color: var(--accent2); }
+  .c-warn { color: var(--warn); }
+  .c-red { color: var(--danger); }
+
+  .content-grid { display: grid; grid-template-columns: 1fr 340px; gap: 16px; }
+  .panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; }
+  .panel-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .panel-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .filter-bar { display: flex; gap: 8px; }
+  .filter-btn { padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; transition: all .15s; }
+  .filter-btn.active { background: rgba(79,142,247,0.15); border-color: var(--accent); color: var(--accent); }
+
+  .trace-list { overflow-y: auto; max-height: 520px; }
+  .trace-row { padding: 14px 20px; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: 60px 1fr 80px 90px 80px 60px; gap: 12px; align-items: center; cursor: pointer; transition: background .1s; }
+  .trace-row:hover { background: var(--bg3); }
+  .trace-row.selected { background: rgba(79,142,247,0.08); border-left: 2px solid var(--accent); }
+  .trace-row:last-child { border-bottom: none; }
+  .trace-header { padding: 8px 20px; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: 60px 1fr 80px 90px 80px 60px; gap: 12px; background: var(--bg3); }
+  .col-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .trace-id { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .trace-name { font-weight: 500; font-size: 13px; }
+  .trace-time { font-family: var(--mono); font-size: 13px; }
+  .tag { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 11px; background: rgba(79,142,247,0.1); color: var(--accent); border: 1px solid rgba(79,142,247,0.2); margin-right: 3px; }
+  .status-ok { color: var(--success); }
+  .status-err { color: var(--danger); }
+  .tokens { font-family: var(--mono); font-size: 13px; color: var(--accent2); }
+
+  .detail-panel { }
+  .detail-content { padding: 20px; }
+  .detail-empty { display: flex; align-items: center; justify-content: center; height: 300px; color: var(--muted); font-size: 13px; }
+  .detail-row { margin-bottom: 16px; }
+  .detail-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .detail-value { font-family: var(--mono); font-size: 13px; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; word-break: break-all; max-height: 100px; overflow-y: auto; }
+  .detail-metric { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .detail-metric:last-child { border-bottom: none; }
+
+  .chart-panel { margin-bottom: 16px; }
+  .chart-wrap { padding: 16px 20px; height: 140px; }
+
+  .empty-state { padding: 60px 20px; text-align: center; color: var(--muted); }
+  .empty-icon { font-size: 32px; margin-bottom: 12px; opacity: .4; }
+  .empty-text { font-size: 14px; margin-bottom: 6px; }
+  .empty-sub { font-size: 12px; opacity: .6; font-family: var(--mono); }
+
+  .auto-refresh { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .auto-refresh input { accent-color: var(--accent); }
+
+  @media (max-width: 900px) {
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .content-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    mytracer
+  </div>
+  <div class="header-right">
+    <input class="endpoint-input" id="endpoint-input" type="text" placeholder="http://localhost:8765" value="http://localhost:8765">
+    <span class="status-badge disconnected" id="conn-status">연결 안됨</span>
+    <label class="auto-refresh">
+      <input type="checkbox" id="auto-refresh" checked> 자동갱신
+    </label>
+    <button class="btn" onclick="loadAll()">새로고침</button>
+    <button class="btn danger" onclick="clearAll()">초기화</button>
+  </div>
+</header>
+
+<main>
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">총 트레이스</div>
+      <div class="stat-value c-blue" id="s-total">—</div>
+      <div class="stat-sub" id="s-funcs">함수 — 개</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">총 토큰</div>
+      <div class="stat-value c-green" id="s-tokens">—</div>
+      <div class="stat-sub">누적 사용량</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">평균 응답시간</div>
+      <div class="stat-value c-warn" id="s-avg">—</div>
+      <div class="stat-sub">ms</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">에러율</div>
+      <div class="stat-value c-red" id="s-errors">—</div>
+      <div class="stat-sub" id="s-errcount">건</div>
+    </div>
+  </div>
+
+  <div class="panel chart-panel">
+    <div class="panel-header">
+      <span class="panel-title">함수별 평균 응답시간 (ms)</span>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="perf-chart" role="img" aria-label="함수별 평균 응답시간 차트"></canvas>
+    </div>
+  </div>
+
+  <div class="content-grid">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">트레이스 로그</span>
+        <div class="filter-bar">
+          <button class="filter-btn active" onclick="setFilter('all', this)">전체</button>
+          <button class="filter-btn" onclick="setFilter('success', this)">성공</button>
+          <button class="filter-btn" onclick="setFilter('error', this)">에러</button>
+        </div>
+      </div>
+      <div class="trace-header">
+        <span class="col-label">ID</span>
+        <span class="col-label">함수명</span>
+        <span class="col-label">시간(ms)</span>
+        <span class="col-label">토큰</span>
+        <span class="col-label">상태</span>
+        <span class="col-label">태그</span>
+      </div>
+      <div class="trace-list" id="trace-list">
+        <div class="empty-state">
+          <div class="empty-icon">◎</div>
+          <div class="empty-text">트레이스 없음</div>
+          <div class="empty-sub">서버 연결 후 에이전트를 실행하세요</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel detail-panel">
+      <div class="panel-header">
+        <span class="panel-title">상세 보기</span>
+      </div>
+      <div id="detail-area">
+        <div class="detail-empty">트레이스를 선택하세요</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+let traces = [];
+let statsData = null;
+let filterStatus = 'all';
+let selectedId = null;
+let perfChart = null;
+let refreshTimer = null;
+
+function getEndpoint() {
+  return document.getElementById('endpoint-input').value.replace(/\/$/, '');
+}
+
+async function fetchJSON(path) {
+  const r = await fetch(getEndpoint() + path);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+async function loadAll() {
+  try {
+    const [traceData, stats] = await Promise.all([
+      fetchJSON('/api/traces?limit=200'),
+      fetchJSON('/api/stats')
+    ]);
+    traces = traceData;
+    statsData = stats;
+    document.getElementById('conn-status').textContent = '연결됨';
+    document.getElementById('conn-status').className = 'status-badge connected';
+    updateStats(stats);
+    renderTraces();
+    renderChart(stats.by_function);
+  } catch (e) {
+    document.getElementById('conn-status').textContent = '연결 안됨';
+    document.getElementById('conn-status').className = 'status-badge disconnected';
+  }
+}
+
+function updateStats(stats) {
+  const s = stats.summary;
+  document.getElementById('s-total').textContent = (s.total_traces || 0).toLocaleString();
+  document.getElementById('s-funcs').textContent = `함수 ${s.unique_functions || 0}개`;
+  document.getElementById('s-tokens').textContent = (s.total_tokens || 0).toLocaleString();
+  document.getElementById('s-avg').textContent = s.avg_elapsed_ms ? Math.round(s.avg_elapsed_ms) : '—';
+  const errRate = s.total_traces > 0 ? ((s.error_count / s.total_traces) * 100).toFixed(1) : '0.0';
+  document.getElementById('s-errors').textContent = errRate + '%';
+  document.getElementById('s-errcount').textContent = (s.error_count || 0) + '건 에러';
+}
+
+function setFilter(status, btn) {
+  filterStatus = status;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTraces();
+}
+
+function renderTraces() {
+  const list = document.getElementById('trace-list');
+  let filtered = traces;
+  if (filterStatus !== 'all') filtered = traces.filter(t => t.status === filterStatus);
+
+  if (filtered.length === 0) {
+    list.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">◎</div>
+      <div class="empty-text">${filterStatus === 'all' ? '트레이스 없음' : filterStatus + ' 트레이스 없음'}</div>
+      <div class="empty-sub">에이전트를 실행하면 여기에 표시됩니다</div>
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(t => {
+    const isOk = t.status === 'success';
+    const tags = (t.tags || []).map(tag => `<span class="tag">${tag}</span>`).join('');
+    const elapsed = Math.round(t.elapsed_ms);
+    const elapsedClass = elapsed > 3000 ? 'c-red' : elapsed > 1000 ? 'c-warn' : '';
+    return `<div class="trace-row ${t.id === selectedId ? 'selected' : ''}" onclick="selectTrace('${t.id}')">
+      <span class="trace-id">${t.id}</span>
+      <span class="trace-name">${t.name}</span>
+      <span class="trace-time ${elapsedClass}">${elapsed}</span>
+      <span class="tokens">${(t.total_tokens || 0).toLocaleString()}</span>
+      <span class="${isOk ? 'status-ok' : 'status-err'}">${isOk ? '✓' : '✗'}</span>
+      <span>${tags || '<span style="color:var(--muted)">—</span>'}</span>
+    </div>`;
+  }).join('');
+}
+
+function selectTrace(id) {
+  selectedId = id;
+  renderTraces();
+  const t = traces.find(x => x.id === id);
+  if (!t) return;
+
+  const elapsed = Math.round(t.elapsed_ms);
+  const ts = new Date(t.timestamp).toLocaleTimeString('ko-KR');
+
+  document.getElementById('detail-area').innerHTML = `
+    <div class="detail-content">
+      <div class="detail-row">
+        <div class="detail-label">메트릭</div>
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:0 12px;">
+          <div class="detail-metric"><span style="color:var(--muted)">실행시간</span><span style="font-family:var(--mono)">${elapsed}ms</span></div>
+          <div class="detail-metric"><span style="color:var(--muted)">입력 토큰</span><span class="tokens">${t.input_tokens || 0}</span></div>
+          <div class="detail-metric"><span style="color:var(--muted)">출력 토큰</span><span class="tokens">${t.output_tokens || 0}</span></div>
+          <div class="detail-metric"><span style="color:var(--muted)">총 토큰</span><span class="tokens">${t.total_tokens || 0}</span></div>
+          <div class="detail-metric"><span style="color:var(--muted)">상태</span><span class="${t.status === 'success' ? 'status-ok' : 'status-err'}">${t.status}</span></div>
+          <div class="detail-metric"><span style="color:var(--muted)">시간</span><span style="font-family:var(--mono);font-size:12px">${ts}</span></div>
+        </div>
+      </div>
+      ${t.input ? `<div class="detail-row">
+        <div class="detail-label">입력</div>
+        <div class="detail-value">${escHtml(t.input)}</div>
+      </div>` : ''}
+      ${t.output ? `<div class="detail-row">
+        <div class="detail-label">출력</div>
+        <div class="detail-value">${escHtml(t.output)}</div>
+      </div>` : ''}
+      ${t.error ? `<div class="detail-row">
+        <div class="detail-label">에러</div>
+        <div class="detail-value" style="color:var(--danger)">${escHtml(t.error)}</div>
+      </div>` : ''}
+      ${(t.tags||[]).length > 0 ? `<div class="detail-row">
+        <div class="detail-label">태그</div>
+        <div>${t.tags.map(tag => `<span class="tag">${tag}</span>`).join('')}</div>
+      </div>` : ''}
+    </div>`;
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderChart(byFunc) {
+  if (!byFunc || byFunc.length === 0) return;
+  const labels = byFunc.slice(0, 8).map(f => f.name);
+  const data = byFunc.slice(0, 8).map(f => Math.round(f.avg_ms));
+
+  if (perfChart) perfChart.destroy();
+  perfChart = new Chart(document.getElementById('perf-chart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: data.map(v => v > 3000 ? 'rgba(248,113,113,0.6)' : v > 1000 ? 'rgba(251,191,36,0.6)' : 'rgba(79,142,247,0.6)'),
+        borderColor: data.map(v => v > 3000 ? '#f87171' : v > 1000 ? '#fbbf24' : '#4f8ef7'),
+        borderWidth: 1,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#7a8090', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { ticks: { color: '#7a8090', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } }
+      }
+    }
+  });
+}
+
+async function clearAll() {
+  if (!confirm('전체 트레이스를 삭제하시겠습니까?')) return;
+  try {
+    await fetch(getEndpoint() + '/api/traces', { method: 'DELETE' });
+    await loadAll();
+  } catch (e) { alert('서버 연결 실패'); }
+}
+
+function startAutoRefresh() {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(() => {
+    if (document.getElementById('auto-refresh').checked) loadAll();
+  }, 3000);
+}
+
+document.getElementById('endpoint-input').addEventListener('change', loadAll);
+document.getElementById('auto-refresh').addEventListener('change', e => {
+  if (e.target.checked) startAutoRefresh();
+  else { clearInterval(refreshTimer); refreshTimer = null; }
+});
+
+loadAll();
+startAutoRefresh();
+</script>
+</body>
+</html>
